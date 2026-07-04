@@ -1,0 +1,210 @@
+# Grafana Alerting provisioning (apiVersion 1). §13 error-observability alerts.
+# Routing: the notification policy (policies.yaml) sends everything to the `discord-errors`
+# contact point (contactpoints.yaml). Aggregations use BOUNDED labels only (§7).
+# Each rule: query Prometheus (refId A, instant) -> math threshold expression (refId C, the
+# condition). NoData until ERROR_SINK_MODE=grafana_native is live (errors_total doesn't exist in
+# sentry mode). THRESHOLDS ARE PLACEHOLDERS — tune to real baselines.
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: error-observability
+    folder: Observability
+    interval: 1m
+    rules:
+      - uid: eo-high-internal-error-rate
+        title: High internal / 5xx error rate
+        condition: C
+        for: 5m
+        noDataState: NoData
+        execErrState: Error
+        labels: { severity: page }
+        annotations:
+          summary: 'High 5xx/internal error rate — {{ $labels.service }}/{{ $labels.subsystem }}'
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              datasource: { type: prometheus, uid: prometheus }
+              editorMode: code
+              expr: 'sum(rate(errors_total{code=~"ERR_INTERNAL|ERR_DEPENDENCY"}[5m])) by (service, subsystem)'
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: __expr__
+            model:
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: '$A > 0.05'
+              type: math
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+
+      - uid: eo-high-uncaught-rate
+        title: High uncaught / critical exception rate
+        condition: C
+        for: 5m
+        noDataState: NoData
+        execErrState: Error
+        labels: { severity: page }
+        annotations:
+          summary: 'Uncaught/critical exceptions rising — {{ $labels.service }}'
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              datasource: { type: prometheus, uid: prometheus }
+              editorMode: code
+              expr: 'sum(rate(errors_total{severity="critical"}[5m])) by (service)'
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: __expr__
+            model:
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: '$A > 0.01'
+              type: math
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+
+      - uid: eo-worker-job-failure-spike
+        title: Worker job-failure spike
+        condition: C
+        for: 10m
+        noDataState: NoData
+        execErrState: Error
+        labels: { severity: ticket }
+        annotations:
+          summary: 'Worker terminal failures spiking — job {{ $labels.jobType }}'
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              datasource: { type: prometheus, uid: prometheus }
+              editorMode: code
+              expr: 'sum(rate(errors_total{subsystem=~"worker\\..*", severity="error"}[5m])) by (jobType)'
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: __expr__
+            model:
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: '$A > 0.05'
+              type: math
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+
+      - uid: eo-webhook-failure-spike
+        title: Webhook failure spike
+        condition: C
+        for: 10m
+        noDataState: NoData
+        execErrState: Error
+        labels: { severity: ticket }
+        annotations:
+          summary: 'Inbound webhook failures spiking — {{ $labels.subsystem }}'
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              datasource: { type: prometheus, uid: prometheus }
+              editorMode: code
+              expr: 'sum(rate(errors_total{subsystem=~"webhook\\..*"}[5m])) by (subsystem)'
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: __expr__
+            model:
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: '$A > 0.05'
+              type: math
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+
+      - uid: eo-ai-provider-failure-spike
+        title: AI gateway provider-failure spike
+        condition: C
+        for: 10m
+        noDataState: NoData
+        execErrState: Error
+        labels: { severity: ticket }
+        annotations:
+          summary: 'AI provider failures — {{ $labels.dependency }}'
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              datasource: { type: prometheus, uid: prometheus }
+              editorMode: code
+              expr: 'sum(rate(errors_total{subsystem="ai.gateway", subcode=~"AI_PROVIDER_.*"}[5m])) by (dependency)'
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: __expr__
+            model:
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: '$A > 0.05'
+              type: math
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+
+      - uid: eo-auth-abuse-anomaly
+        title: Auth / rate-limit anomaly (possible abuse)
+        condition: C
+        for: 5m
+        noDataState: NoData
+        execErrState: Error
+        labels: { severity: ticket }
+        annotations:
+          summary: 'Auth/rate-limit anomaly — route {{ $labels.route }}'
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              datasource: { type: prometheus, uid: prometheus }
+              editorMode: code
+              expr: 'sum(rate(operational_anomalies_total{code=~"ERR_FORBIDDEN|ERR_RATE_LIMITED"}[5m])) by (route)'
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: __expr__
+            model:
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: '$A > 0.05'
+              type: math
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C

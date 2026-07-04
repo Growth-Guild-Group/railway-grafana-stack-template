@@ -1,0 +1,13 @@
+apiVersion: 1
+contactPoints:
+  - orgId: 1
+    name: discord-errors
+    receivers:
+      - uid: discord_errors
+        type: discord
+        settings:
+          # Set DISCORD_WEBHOOK_URL on the Grafana service — do NOT commit the webhook.
+          # (Grafana expands ${VAR} in provisioning files.) Create it in the target Discord
+          # channel → Edit Channel → Integrations → Webhooks → New Webhook → Copy URL.
+          url: ${DISCORD_WEBHOOK_URL}
+        disableResolveMessage: false
