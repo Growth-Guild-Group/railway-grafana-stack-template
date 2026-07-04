@@ -52,3 +52,15 @@ datasources:
     uid: tempo
     url: $TEMPO_INTERNAL_URL # QUERY API — e.g. http://tempo.railway.internal:3200 (NOT :4317)
     isDefault: false
+    # trace → logs: from a span, find its Loki logs by traceId (line filter, works whether traceId
+    # is a field or in the line). NOTE tunable in the UI: the stream selector assumes a `service`
+    # label and the source field is `traceID` — adjust if the link returns nothing (soft failure).
+    correlations:
+      - targetUID: loki
+        label: 'View logs'
+        description: 'Find Loki logs for this trace'
+        type: query
+        config:
+          field: traceID
+          target:
+            expr: '{service=~".+"} |= "$${__value.raw}"' # escaped $$ — file interpolates $VAR
