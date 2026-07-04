@@ -2,5 +2,10 @@ ARG VERSION=11.5.2
 
 FROM grafana/grafana-oss:${VERSION}
 
-# copy the datasources and dashboards
+# Provisioning: datasources + the dashboard provider + dashboard models.
 COPY datasources /etc/grafana/provisioning/datasources
+# dashboards.yaml is a FILE (the dashboard provider) — copy it INTO the provisioning dir.
+COPY provisioning/dashboards.yaml /etc/grafana/provisioning/dashboards/
+# The dashboard JSON models live where the provider's options.path points.
+COPY dashboards /etc/grafana/dashboards
+# NOTE: alerting (contact points + rules) added in a follow-up once base provisioning is confirmed.
