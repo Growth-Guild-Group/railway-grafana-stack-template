@@ -2,8 +2,9 @@
 # Routing: the notification policy (policies.yaml) sends everything to the `discord-errors`
 # contact point (contactpoints.yaml). Aggregations use BOUNDED labels only (§7).
 # Each rule: query Prometheus (refId A, instant) -> math threshold expression (refId C, the
-# condition). NoData until ERROR_SINK_MODE=grafana_native is live (errors_total doesn't exist in
-# sentry mode). THRESHOLDS ARE PLACEHOLDERS — tune to real baselines.
+# condition). noDataState=OK: "no errors" is the HEALTHY state, so no-data must NOT alert — with
+# NoData, Grafana fires a DatasourceNoData notification, which is backwards for error-rate alerts.
+# Rules only fire on a real threshold breach. THRESHOLDS ARE PLACEHOLDERS — tune to real baselines.
 apiVersion: 1
 groups:
   - orgId: 1
@@ -15,7 +16,7 @@ groups:
         title: High internal / 5xx error rate
         condition: C
         for: 5m
-        noDataState: NoData
+        noDataState: OK
         execErrState: Error
         labels: { severity: page }
         annotations:
@@ -48,7 +49,7 @@ groups:
         title: High uncaught / critical exception rate
         condition: C
         for: 5m
-        noDataState: NoData
+        noDataState: OK
         execErrState: Error
         labels: { severity: page }
         annotations:
@@ -81,7 +82,7 @@ groups:
         title: Worker job-failure spike
         condition: C
         for: 10m
-        noDataState: NoData
+        noDataState: OK
         execErrState: Error
         labels: { severity: ticket }
         annotations:
@@ -114,7 +115,7 @@ groups:
         title: Webhook failure spike
         condition: C
         for: 10m
-        noDataState: NoData
+        noDataState: OK
         execErrState: Error
         labels: { severity: ticket }
         annotations:
@@ -147,7 +148,7 @@ groups:
         title: AI gateway provider-failure spike
         condition: C
         for: 10m
-        noDataState: NoData
+        noDataState: OK
         execErrState: Error
         labels: { severity: ticket }
         annotations:
@@ -180,7 +181,7 @@ groups:
         title: Auth / rate-limit anomaly (possible abuse)
         condition: C
         for: 5m
-        noDataState: NoData
+        noDataState: OK
         execErrState: Error
         labels: { severity: ticket }
         annotations:
