@@ -5,8 +5,9 @@
 # derivedFields, tracesToLogsV2). Those caused "Datasource provisioning error: data source not
 # found" on a fresh Grafana: Grafana can't resolve a datasourceUid pointing at another datasource
 # created in the SAME provisioning batch. (The upstream template ships without them too.)
-# Trace correlations (metric→trace, log→trace, trace→logs) are added later via Grafana Correlations,
-# which run AFTER datasources exist and are the mechanism designed for cross-datasource links.
+# Trace correlations use the explicit `correlations:` key (below), which runs AFTER datasources exist
+# — the mechanism designed for cross-datasource links. log→trace is wired; trace→logs + metric→trace
+# (exemplars) follow once this proves clean.
 apiVersion: 1
 
 # Delete provisioned datasources no longer present in a provisioning file.
@@ -28,6 +29,21 @@ datasources:
     uid: loki
     url: $LOKI_INTERNAL_URL # e.g. http://loki.railway.internal:3100
     isDefault: false
+    # log → trace (§16): open the Tempo trace referenced by a log's traceId. Uses the explicit
+    # `correlations` key (applied after datasources exist) — NOT jsonData derivedFields (which
+    # Grafana migrates to correlations during datasource provisioning = the same-batch failure that
+    # poisoned the volume). NOTE: if the link doesn't resolve, the `field` may need to be `trace_id`
+    # (OTLP→Loki naming) — verify against a real log; a wrong field is a soft failure, not a crash.
+    correlations:
+      - targetUID: tempo
+        label: 'View trace'
+        description: 'Open the Tempo trace for this log line'
+        type: query
+        config:
+          field: traceId
+          target:
+            queryType: traceql
+            query: '$${__value.raw}' # escaped $$ — this file interpolates $VAR env vars
 
   - name: Tempo
     type: tempo
