@@ -1,0 +1,111 @@
+{
+  "uid": "error-observability",
+  "title": "Error Observability",
+  "tags": ["observability", "errors"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "query": "label_values(errors_total, service)",
+        "includeAll": true,
+        "multi": true,
+        "current": { "text": "All", "value": "$__all" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Captured error rate — by service / subsystem",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "options": { "legend": { "displayMode": "table", "placement": "right" } },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(errors_total{service=~\"$service\"}[5m])) by (service, subsystem)",
+          "legendFormat": "{{service}} / {{subsystem}}",
+          "exemplar": true
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Captured errors — by code / subcode",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(errors_total{service=~\"$service\"}[5m])) by (code, subcode)",
+          "legendFormat": "{{code}}:{{subcode}}",
+          "exemplar": true
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Operational anomalies (non-captured 4xx) — by code",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(operational_anomalies_total{service=~\"$service\"}[5m])) by (code)",
+          "legendFormat": "{{code}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Suppressed (dedup) rate",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(error_suppressed_total{service=~\"$service\"}[5m])) by (service, subsystem)",
+          "legendFormat": "{{service}} / {{subsystem}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Top fingerprints (last 1h)",
+      "type": "table",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(20, sum by (fingerprint) (count_over_time({service=~\"$service\", severity=~\"error|critical\"} | json | fingerprint != `` [1h])))",
+          "queryType": "instant"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Recent captured errors (click traceId → Tempo)",
+      "type": "logs",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 24 },
+      "options": { "showTime": true, "wrapLogMessage": true, "dedupStrategy": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{service=~\"$service\", severity=~\"error|critical\"} | json"
+        }
+      ]
+    }
+  ]
+}

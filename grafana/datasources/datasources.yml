@@ -1,46 +1,38 @@
-# Configuration file version
-# See here fore more information on configuration:
-# https://grafana.com/docs/grafana/latest/administration/provisioning/#example-data-source-configuration-file
+# Grafana datasource provisioning. Mounted at /etc/grafana/provisioning/datasources/.
+# The uids (prometheus/loki/tempo) match the dashboard JSON + the alerting rules.
+#
+# PLAIN datasources — NO cross-datasource `datasourceUid` refs (exemplarTraceIdDestinations,
+# derivedFields, tracesToLogsV2). Those caused "Datasource provisioning error: data source not
+# found" on a fresh Grafana: Grafana can't resolve a datasourceUid pointing at another datasource
+# created in the SAME provisioning batch. (The upstream template ships without them too.)
+# Trace correlations (metric→trace, log→trace, trace→logs) are added later via Grafana Correlations,
+# which run AFTER datasources exist and are the mechanism designed for cross-datasource links.
 apiVersion: 1
 
-# Mark provisioned data sources for deletion if they are no longer in a provisioning file.
+# Delete provisioned datasources no longer present in a provisioning file.
 prune: false
 
-# List of data sources to insert/update depending on what's available.
 datasources:
-  - name: Loki
-    type: loki
-    access: direct
-    orgId: 1
-    uid: grafana_lokiq
-    url: $LOKI_INTERNAL_URL
-    user:
-    database:
-    basicAuth:
-    basicAuthUser:
-    withCredentials:
-    isDefault: true
   - name: Prometheus
     type: prometheus
     access: proxy
     orgId: 1
-    uid: grafana_prometheus
-    url: $PROMETHEUS_INTERNAL_URL
-    user:
-    database:
-    basicAuth:
-    basicAuthUser:
-    withCredentials:
+    uid: prometheus
+    url: $PROMETHEUS_INTERNAL_URL # e.g. http://prometheus-yqhm.railway.internal:9090
+    isDefault: true # the ONE default
+
+  - name: Loki
+    type: loki
+    access: proxy # NOT direct — the browser can't reach *.railway.internal (server proxies)
+    orgId: 1
+    uid: loki
+    url: $LOKI_INTERNAL_URL # e.g. http://loki.railway.internal:3100
     isDefault: false
+
   - name: Tempo
     type: tempo
     access: proxy
     orgId: 1
-    uid: grafana_tempo
-    url: $TEMPO_INTERNAL_URL
-    user:
-    database:
-    basicAuth:
-    basicAuthUser:
-    withCredentials:
+    uid: tempo
+    url: $TEMPO_INTERNAL_URL # QUERY API — e.g. http://tempo.railway.internal:3200 (NOT :4317)
     isDefault: false
