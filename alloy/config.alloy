@@ -1,0 +1,82 @@
+// Grafana Alloy collector — lucidserum observability platform.
+//
+// The single OTLP ingress for the self-hosted Grafana stack. Receives OTLP (metrics + traces +
+// logs) from the app services (api / worker / agent — in the lucidserum-core repo) over Railway's
+// private network and fans out: metrics → Prometheus (remote_write), traces → Tempo, logs → Loki.
+// The app exporters push unauthenticated to this collector on the private network; this collector
+// is the single egress to the backend (Grafana / Prometheus / Loki / Tempo — all in THIS repo).
+//
+// CROSS-REPO CONTRACT (the only coupling to the apps):
+//   1. Endpoint — the apps set OTEL_EXPORTER_OTLP_ENDPOINT = http://alloy.railway.internal:4318.
+//   2. Loki labels — controlled by the APP, not here: the ErrorReporter tags each OTLP log with a
+//      `loki.attribute.labels` hint (= LOKI_LABEL_FIELDS in lucidserum-core
+//      packages/platform/observability/src/errors/otlp-log.ts: service, environment, subsystem,
+//      severity, code, subcode). The otelcol.exporter.loki below HONORS that hint, so only those
+//      bounded fields become Loki labels; identity (fingerprint / occurrenceId / traceId /
+//      correlationId / public ids) stays attributes. Nothing to keep in sync here — changing the
+//      label set is a lucidserum-core change; Alloy picks it up automatically.
+//
+// Required env (set on the Railway Alloy service):
+//   PROMETHEUS_REMOTE_WRITE_URL  e.g. http://prometheus-yqhm.railway.internal:9090/api/v1/write
+//   TEMPO_OTLP_ENDPOINT          e.g. tempo.railway.internal:4317
+//   LOKI_PUSH_URL                e.g. http://loki.railway.internal:3100/loki/api/v1/push
+//
+// Prometheus must run with `--web.enable-remote-write-receiver` (+ a retention flag and an attached
+// volume for durable history). Rollout runbook lives in lucidserum-core:
+// docs/runbooks/observability-grafana-alloy-setup.md.
+
+otelcol.receiver.otlp "in" {
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+  grpc {
+    endpoint = "0.0.0.0:4317"
+  }
+
+  output {
+    metrics = [otelcol.processor.batch.default.input]
+    traces  = [otelcol.processor.batch.default.input]
+    logs    = [otelcol.processor.batch.default.input]
+  }
+}
+
+otelcol.processor.batch "default" {
+  output {
+    metrics = [otelcol.exporter.prometheus.to_prometheus.input]
+    traces  = [otelcol.exporter.otlp.to_tempo.input]
+    logs    = [otelcol.exporter.loki.to_loki.input]
+  }
+}
+
+// OTLP metrics → Prometheus exposition → remote_write.
+otelcol.exporter.prometheus "to_prometheus" {
+  forward_to = [prometheus.remote_write.store.receiver]
+}
+
+prometheus.remote_write "store" {
+  endpoint {
+    url = sys.env("PROMETHEUS_REMOTE_WRITE_URL")
+  }
+}
+
+// OTLP traces → Tempo (OTLP/gRPC).
+otelcol.exporter.otlp "to_tempo" {
+  client {
+    endpoint = sys.env("TEMPO_OTLP_ENDPOINT")
+    tls {
+      insecure = true
+    }
+  }
+}
+
+// OTLP logs → Loki. Honors the reporter's `loki.attribute.labels` hint (bounded fields only;
+// identity — fingerprint / occurrenceId / traceId / correlationId / public ids — stays attributes).
+otelcol.exporter.loki "to_loki" {
+  forward_to = [loki.write.to_loki.receiver]
+}
+
+loki.write "to_loki" {
+  endpoint {
+    url = sys.env("LOKI_PUSH_URL")
+  }
+}

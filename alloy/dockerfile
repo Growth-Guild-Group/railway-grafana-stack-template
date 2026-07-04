@@ -1,0 +1,12 @@
+# Grafana Alloy collector for the self-hosted Grafana Stack.
+# NOTE: pin to a tested release tag before production — avoid :latest in prod.
+FROM grafana/alloy:latest
+
+COPY config.alloy /etc/alloy/config.alloy
+
+# OTLP receivers: 4317 (gRPC), 4318 (HTTP). 12345 = Alloy's own HTTP server (readiness at /-/ready).
+EXPOSE 4317 4318 12345
+
+ENTRYPOINT ["/bin/alloy", "run", "/etc/alloy/config.alloy", \
+  "--server.http.listen-addr=0.0.0.0:12345", \
+  "--storage.path=/var/lib/alloy/data"]
