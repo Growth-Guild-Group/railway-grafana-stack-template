@@ -148,6 +148,40 @@ To customize the configuration of Loki, Prometheus, or Tempo:
 
 The pre-configured Grafana connections will continue to work with your customized services.
 
+## lucidserum: required config & gotchas
+
+This fork backs lucidserum's error-observability pipeline (apps → **Alloy** → this stack). A few
+settings are load-bearing and easy to get subtly wrong — set them explicitly.
+
+### Grafana service env vars
+
+| Variable | Value | Why |
+|----------|-------|-----|
+| `GF_SERVER_ROOT_URL` | `https://${{RAILWAY_PUBLIC_DOMAIN}}` | Without it Grafana defaults to `http://localhost:3000`, so **every alert-notification link (Discord `Source:`/`Silence:`) points at localhost**. |
+| `PROMETHEUS_INTERNAL_URL` | `http://prometheus.railway.internal:9090` | Prometheus datasource + alert-rule query target. **Use the bare service host** — Railway private domains dropped the old `-suffix` alias; a stale value 502s the datasource and fires a `DatasourceError`. |
+| `LOKI_INTERNAL_URL` | `http://loki.railway.internal:3100` | Loki query datasource. |
+| `TEMPO_INTERNAL_URL` | `http://tempo.railway.internal:3200` | Tempo **query** API — `:3200`, NOT the `:4317`/`:4318` OTLP ingest ports. |
+| `DISCORD_WEBHOOK_URL` | *(your webhook)* | Alert contact point (`grafana/alerting/contactpoints.yaml`). |
+
+### Alloy collector env vars (the OTLP ingress — separate service)
+
+| Variable | Value | Gotcha |
+|----------|-------|--------|
+| `PROMETHEUS_REMOTE_WRITE_URL` | `http://prometheus.railway.internal:9090/api/v1/write` | Prometheus needs `--web.enable-remote-write-receiver`. |
+| `LOKI_PUSH_URL` | `http://loki.railway.internal:3100/loki/api/v1/push` | **Port `:3100`, NOT `:3000`** — `:3000` is Grafana's port; pushing there is `connection refused` and logs are silently dropped. |
+| `TEMPO_OTLP_ENDPOINT` | `tempo.railway.internal:4317` | **Bare `host:port`, no scheme** — a `grpc://`/`http://` prefix → `too many colons in address` and spans drop. |
+
+### Notes
+
+- **Alerting is Grafana-managed only** — rules live in `grafana/alerting/`. The datasources set
+  `jsonData.manageAlerts: false` so the Alerting UI doesn't query a (nonexistent) Loki/Prometheus
+  ruler; otherwise Loki 404s with *"Cannot load rules for this datasource."*
+- **Datasource cross-links use the explicit `correlations:` key**, never jsonData
+  `derivedFields`/`tracesToLogsV2`/`exemplarTraceIdDestinations` — the latter migrate inline during
+  provisioning and can poison the Grafana volume ("data source not found" on every boot).
+- **Verify data-plane legs at the sink, not at boot** — an exporter that logs no error at startup
+  isn't proven; it only errors when it actually pushes. Query Loki/Tempo/Prometheus for real records.
+
 ## Additional Resources
 
 - [Locomotive: a loki transport for railway services](https://railway.com/template/jP9r-f)

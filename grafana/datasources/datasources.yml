@@ -19,16 +19,24 @@ datasources:
     access: proxy
     orgId: 1
     uid: prometheus
-    url: $PROMETHEUS_INTERNAL_URL # e.g. http://prometheus-yqhm.railway.internal:9090
+    url: $PROMETHEUS_INTERNAL_URL # e.g. http://prometheus.railway.internal:9090 (BARE service host — a stale -suffix won't resolve)
     isDefault: true # the ONE default
+    jsonData:
+      # Grafana-managed alerting only (rules live in grafana/alerting/). Don't let the Alerting UI
+      # query this datasource's ruler API for data-source-managed rules.
+      manageAlerts: false
 
   - name: Loki
     type: loki
     access: proxy # NOT direct — the browser can't reach *.railway.internal (server proxies)
     orgId: 1
     uid: loki
-    url: $LOKI_INTERNAL_URL # e.g. http://loki.railway.internal:3100
+    url: $LOKI_INTERNAL_URL # e.g. http://loki.railway.internal:3100 (query AND Alloy push both use :3100 — NOT Grafana's :3000)
     isDefault: false
+    jsonData:
+      # single-binary Loki has no ruler API → the Alerting UI's rule fetch 404s ("Cannot load
+      # rules for this datasource"). We use Grafana-managed alerting only, so disable it.
+      manageAlerts: false
     # log → trace (§16): open the Tempo trace referenced by a log's traceId. Uses the explicit
     # `correlations` key (applied after datasources exist) — NOT jsonData derivedFields (which
     # Grafana migrates to correlations during datasource provisioning = the same-batch failure that
