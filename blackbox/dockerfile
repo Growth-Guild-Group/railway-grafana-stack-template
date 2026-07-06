@@ -1,0 +1,11 @@
+ARG VERSION=v0.25.0
+
+FROM prom/blackbox-exporter:${VERSION}
+
+# Probe module config. The exporter listens on :9115; Prometheus scrapes /probe with the target
+# passed via relabeling (multi-target exporter pattern — see prometheus/prom.yml).
+COPY blackbox.yml /etc/blackbox_exporter/config.yml
+
+EXPOSE 9115
+
+CMD ["--config.file=/etc/blackbox_exporter/config.yml"]

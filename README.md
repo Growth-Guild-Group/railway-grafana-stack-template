@@ -182,6 +182,39 @@ settings are load-bearing and easy to get subtly wrong — set them explicitly.
 - **Verify data-plane legs at the sink, not at boot** — an exporter that logs no error at startup
   isn't proven; it only errors when it actually pushes. Query Loki/Tempo/Prometheus for real records.
 
+## Synthetic uptime monitoring — Layer A (engineering) + the Layer B plan
+
+**Layer A — internal synthetic monitoring** (this repo). A **Blackbox Exporter** service (`blackbox/`,
+listens on `:9115`) that Prometheus scrapes with the multi-target pattern: `prometheus/prom.yml` calls
+`/probe?target=<url>&module=http_2xx` per target, blackbox performs the HTTP probe, and per-target
+labels (`service`/`environment`/`surface`/`criticality`/`provider`) travel with the `probe_*` series.
+
+- **Deploy**: new Railway service in this project+environment, Root Directory = `blackbox` (Dockerfile
+  builder, driven by `blackbox/railway.json`). No env/secrets — it probes public URLs. Internal host
+  `blackbox.railway.internal:9115` must match the scrape config's `replacement`.
+- **Targets**: edit the `blackbox` job's `static_configs` in `prometheus/prom.yml` — one entry per
+  target, each with its own labels. Starts with `https://dev-api.lucidserum.com/health`.
+- **Alerts** (`grafana/alerting/rules.yaml`, group `synthetic-monitoring`, → Discord, all
+  `audience: engineering`): `synthetic-probe-down` (a target failed), `synthetic-blackbox-exporter-down`
+  (the probe system itself is blind — kept **distinct** from a target failure), and
+  `synthetic-tls-cert-expiring` (< 14d).
+- **Dashboard**: `grafana/dashboards/synthetic-uptime.json` (probe up/down, latency, days-to-cert-expiry,
+  exporter health).
+
+> ⚠️ **Layer A runs INSIDE the Railway/observability failure domain** — a total Railway/provider/DNS
+> outage takes it (and Grafana) down too. It is **engineering observability only**: it **must not** be
+> wired to a customer-facing status page, and dev probes must never surface publicly. The
+> `audience: engineering` label marks that boundary.
+
+**Layer B — independent external synthetic monitoring** (NOT in this repo; a **required pre-launch
+follow-up**). A probe hosted OUTSIDE Railway (e.g. Better Stack / Instatus / a self-hosted Gatus on a
+different provider) hitting the same public URLs. It is the out-of-domain "is the provider / DNS /
+Railway itself up" backstop and the **only** acceptable source for a public uptime/status page.
+
+**Not covered by blackbox**: `worker` / `agent` have no public HTTP surface — their liveness belongs to
+**heartbeat / metric-freshness / job-backlog** alerts off the metrics they already push (e.g. stale
+`target_info`, rising outbox backlog), not an HTTP probe.
+
 ## Additional Resources
 
 - [Locomotive: a loki transport for railway services](https://railway.com/template/jP9r-f)

@@ -209,3 +209,118 @@ groups:
               intervalMs: 1000
               maxDataPoints: 43200
               refId: C
+
+  # Layer A — INTERNAL synthetic monitoring (Blackbox Exporter). ENGINEERING alerts only: these run
+  # inside the Railway failure domain and MUST NOT feed a customer-facing status page. The `audience:
+  # engineering` label marks that boundary. Customer-facing uptime is Layer B (independent external
+  # probe) — a pre-launch requirement. probe-down (a target failed) is kept DISTINCT from
+  # exporter-down (the probe system itself is blind).
+  - orgId: 1
+    name: synthetic-monitoring
+    folder: Observability
+    interval: 1m
+    rules:
+      - uid: synthetic-probe-down
+        title: Synthetic probe down (target unreachable)
+        condition: C
+        for: 2m
+        # A configured-but-failing target still emits probe_success=0, so "no data" here means the
+        # EXPORTER isn't scraping — that case is owned by synthetic-blackbox-exporter-down. Keep OK so
+        # the two signals stay distinct.
+        noDataState: OK
+        execErrState: Error
+        labels: { audience: engineering, severity: page }
+        annotations:
+          summary: 'Synthetic probe DOWN — {{ $labels.service }}/{{ $labels.surface }} ({{ $labels.instance }}), criticality={{ $labels.criticality }}, provider={{ $labels.provider }}. Layer A (engineering) — NOT a customer-facing signal.'
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              datasource: { type: prometheus, uid: prometheus }
+              editorMode: code
+              expr: 'probe_success'
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: __expr__
+            model:
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: '$A < 1'
+              type: math
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+
+      - uid: synthetic-blackbox-exporter-down
+        title: Blackbox exporter down (synthetic monitoring blind)
+        condition: C
+        for: 2m
+        # Exporter unreachable ⇒ ALL probes are stale ⇒ we've lost synthetic visibility. No data
+        # (job absent) also means blind, so alert on it too. Distinguishes probe-SYSTEM failure from
+        # a single target failure (synthetic-probe-down).
+        noDataState: Alerting
+        execErrState: Alerting
+        labels: { audience: engineering, severity: page }
+        annotations:
+          summary: 'Blackbox exporter unreachable — Layer A synthetic monitoring is BLIND (all probes stale). Engineering-only.'
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              datasource: { type: prometheus, uid: prometheus }
+              editorMode: code
+              expr: 'min(up{job="blackbox"})'
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: __expr__
+            model:
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: '$A < 1'
+              type: math
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+
+      - uid: synthetic-tls-cert-expiring
+        title: TLS certificate expiring soon (synthetic probe)
+        condition: C
+        for: 1h
+        noDataState: OK
+        execErrState: Error
+        labels: { audience: engineering, severity: ticket }
+        annotations:
+          summary: 'TLS cert for {{ $labels.instance }} expires in < 14d ({{ $labels.service }}/{{ $labels.surface }}). Engineering — renew before expiry.'
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              datasource: { type: prometheus, uid: prometheus }
+              editorMode: code
+              expr: 'probe_ssl_earliest_cert_expiry - time()'
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: __expr__
+            model:
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: '$A < 1209600'
+              type: math
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C

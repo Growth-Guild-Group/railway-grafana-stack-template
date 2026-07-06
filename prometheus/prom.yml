@@ -6,16 +6,33 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:9090']
 
-  # - job_name: 'example_api'
-  #   scheme: http
-  #   static_configs:
-  #     - targets: ['example_api:9091']
-
-  #  ? TODO: add your services here
-  # - job_name: 'your-job-name'
-  #   scheme: https
-  #   static_configs:
-  #     - targets: ['URL_GOES_HERE']
-  #   basic_auth:
-  #     username: HTTP_AUTH_USERNAME_GOES_HERE
-  #     password: HTTP_AUTH_PASSWORD_GOES_HERE
+  # Layer A — INTERNAL synthetic monitoring (Blackbox Exporter, multi-target pattern).
+  # Prometheus calls blackbox /probe with each target below; blackbox performs the HTTP probe and
+  # returns probe_* metrics. Per-target labels (service/environment/surface/criticality/provider)
+  # travel with the series so alerts + dashboards can slice by them. ENGINEERING observability only:
+  # blackbox runs inside the Railway failure domain, so this is NOT the customer-facing uptime source
+  # (that is Layer B — an independent external probe, a pre-launch requirement for the public status
+  # page). Add a target by appending a static_configs entry with its own labels.
+  - job_name: 'blackbox'
+    scrape_interval: 30s
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets: ['https://dev-api.lucidserum.com/health']
+        labels:
+          service: api
+          environment: development
+          surface: health
+          criticality: high
+          provider: railway
+      # Production example (add when the prod API is public):
+      # - targets: ['https://api.lucidserum.com/health']
+      #   labels: { service: api, environment: production, surface: health, criticality: high, provider: railway }
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target # the probe URL → /probe?target=<url>
+      - source_labels: [__param_target]
+        target_label: instance # series identified by the TARGET, not the exporter
+      - target_label: __address__
+        replacement: blackbox.railway.internal:9115 # ...but actually scrape the exporter

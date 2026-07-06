@@ -1,0 +1,22 @@
+# Blackbox Exporter probe modules — Layer A: INTERNAL synthetic monitoring.
+#
+# Prometheus scrapes /probe?target=<url>&module=http_2xx (multi-target pattern; targets + per-target
+# labels live in prometheus/prom.yml). Blackbox performs the HTTP probe and returns probe_* metrics
+# (probe_success, probe_duration_seconds, probe_http_status_code, probe_ssl_earliest_cert_expiry, …).
+#
+# ⚠️ FAILURE-DOMAIN NOTE: this exporter runs INSIDE the same Railway/observability failure domain as
+# the app. It is ENGINEERING observability (alerting, latency, TLS-expiry, probe diagnostics) — it is
+# NOT a customer-facing uptime source and MUST NOT feed a public status page. A total Railway/provider
+# outage takes this down too. The independent, out-of-domain probe is **Layer B** (external synthetic
+# monitoring) — a required pre-launch follow-up before any public uptime/status surface.
+modules:
+  http_2xx:
+    prober: http
+    timeout: 8s
+    http:
+      method: GET
+      valid_status_codes: [] # empty ⇒ any 2xx is a pass
+      follow_redirects: true
+      fail_if_not_ssl: true # public targets must terminate TLS
+      preferred_ip_protocol: ip4
+      ip_protocol_fallback: true
