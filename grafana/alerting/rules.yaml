@@ -324,3 +324,181 @@ groups:
               intervalMs: 1000
               maxDataPoints: 43200
               refId: C
+
+  # ── Email reputation (SES Tier 2 — lucidserum-core docs/engineering/alert-catalog.md
+  # ALT-011..014, spec 26 §4.5; thresholds user-reviewed 2026-07-06). Numerator:
+  # email_provider_events_total{provider,event_type,bounce_classification} (fresh
+  # provider-event ledger inserts, redelivery-proof). Denominator:
+  # messaging_send_provider_accepted_total (accepted outbound CONVERSATION sends; no
+  # provider label — exact under the one-default-identity model, catalog documents the
+  # caveat). The `and` floor clause makes the ratio series EMPTY below the floor →
+  # noDataState OK = no alert (denominator floors, never a 1-bounce-in-10-sends page).
+  - orgId: 1
+    name: email-reputation
+    folder: Observability
+    interval: 1m
+    rules:
+      - uid: ses-bounce-rate-warn
+        title: 'ALT-011: SES bounce rate > 2% (floor 200 sends/1h)'
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warn }
+        annotations:
+          summary: 'SES bounce rate above 2% over 1h — check email_provider_events ledger for the bouncing recipients/tenant'
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              datasource: { type: prometheus, uid: prometheus }
+              editorMode: code
+              expr: '(sum(increase(email_provider_events_total{provider="ses",event_type="bounced"}[1h])) / sum(increase(messaging_send_provider_accepted_total[1h]))) and on() (sum(increase(messaging_send_provider_accepted_total[1h])) >= 200)'
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: __expr__
+            model:
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: '$A > 0.02'
+              type: math
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+
+      - uid: ses-bounce-rate-page
+        title: 'ALT-012: SES bounce rate > 4% (floor 200 sends/1h)'
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: page }
+        annotations:
+          summary: 'SES bounce rate above 4% over 1h — consider the manual levers (identity flip / env kill) BEFORE the 5% SES review band'
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              datasource: { type: prometheus, uid: prometheus }
+              editorMode: code
+              expr: '(sum(increase(email_provider_events_total{provider="ses",event_type="bounced"}[1h])) / sum(increase(messaging_send_provider_accepted_total[1h]))) and on() (sum(increase(messaging_send_provider_accepted_total[1h])) >= 200)'
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: __expr__
+            model:
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: '$A > 0.04'
+              type: math
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+
+      - uid: ses-complaint-rate-warn
+        title: 'ALT-013: SES complaint rate > 0.05% (floor 1000 sends/1h)'
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warn }
+        annotations:
+          summary: 'SES complaint rate above 0.05% over 1h — complaints are consent failures; identify the sending tenant/content'
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              datasource: { type: prometheus, uid: prometheus }
+              editorMode: code
+              expr: '(sum(increase(email_provider_events_total{provider="ses",event_type="complained"}[1h])) / sum(increase(messaging_send_provider_accepted_total[1h]))) and on() (sum(increase(messaging_send_provider_accepted_total[1h])) >= 1000)'
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: __expr__
+            model:
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: '$A > 0.0005'
+              type: math
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+
+      - uid: ses-complaint-rate-page
+        title: 'ALT-013: SES complaint rate >= 0.1% (floor 1000 sends/1h)'
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: page }
+        annotations:
+          summary: 'SES complaint rate at/above the 0.1% SES review band — act now'
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              datasource: { type: prometheus, uid: prometheus }
+              editorMode: code
+              expr: '(sum(increase(email_provider_events_total{provider="ses",event_type="complained"}[1h])) / sum(increase(messaging_send_provider_accepted_total[1h]))) and on() (sum(increase(messaging_send_provider_accepted_total[1h])) >= 1000)'
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: __expr__
+            model:
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: '$A >= 0.001'
+              type: math
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+
+      - uid: ses-complaint-absolute
+        title: 'ALT-014: SES absolute complaints >= 3 in 1h (NO floor)'
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: page }
+        annotations:
+          summary: 'SES received >= 3 complaints in 1h — a denominator floor must never suppress complaints; investigate every one'
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              datasource: { type: prometheus, uid: prometheus }
+              editorMode: code
+              expr: 'sum(increase(email_provider_events_total{provider="ses",event_type="complained"}[1h]))'
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: C
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: __expr__
+            model:
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: '$A >= 3'
+              type: math
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
