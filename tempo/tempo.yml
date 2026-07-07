@@ -17,3 +17,47 @@ distributor:
           endpoint: "0.0.0.0:4317"
         http:
           endpoint: "0.0.0.0:4318"
+
+# Metrics-generator. Derives span-metrics + service-graph metrics from incoming
+# spans, remote-writes them to Prometheus, and (via the local-blocks processor)
+# backs TraceQL metrics queries over recent traces.
+#
+# WITHOUT this block the generator ring has no members, so Grafana's Service
+# Graph tab and any TraceQL-metrics query (e.g. `{} | rate()`) fail with
+#   "error querying generators in Querier.queryRangeRecent:
+#    error finding generators: empty ring"
+# even though plain trace search works. Adding it (plus the overrides switch
+# below) is what turns those views on.
+metrics_generator:
+  registry:
+    external_labels:
+      source: tempo
+  storage:
+    # Generator WAL + remote_write target. Lives on the mounted volume (/var/tempo).
+    # Prometheus runs with --web.enable-remote-write-receiver, so /api/v1/write accepts this.
+    path: /var/tempo/generator/wal
+    remote_write:
+      - url: http://prometheus.railway.internal:9090/api/v1/write
+        send_exemplars: true
+  # local-blocks persists recent traces so TraceQL metrics (queryRangeRecent) can read them.
+  traces_storage:
+    path: /var/tempo/generator/traces
+  processor:
+    local_blocks:
+      filter_server_spans: false
+      flush_to_storage: true
+
+query_frontend:
+  metrics:
+    # Metrics queries for data newer than query_backend_after are served from the
+    # generator's local blocks; older data comes from backend blocks.
+    max_duration: 200h
+    query_backend_after: 5m
+
+# The per-tenant switch that actually enables the generator: Tempo produces NO
+# metrics until a processor is listed here. Classic histograms only — our
+# Prometheus does not run --enable-feature=native-histograms.
+overrides:
+  defaults:
+    metrics_generator:
+      processors: [service-graphs, span-metrics, local-blocks]
